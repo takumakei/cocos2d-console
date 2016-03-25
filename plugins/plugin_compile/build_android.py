@@ -258,7 +258,13 @@ class AndroidBuilder(object):
         cocos.Logging.info(MultiLanguage.get_string('COMPILE_INFO_NDK_MODE', build_mode))
         ndk_root = cocos.check_environment_variable('NDK_ROOT')
 
-        toolchain_version = self.get_toolchain_version(ndk_root, compile_obj)
+        if compile_obj.ndk_toolchain_version is None:
+            toolchain_version = None
+        elif compile_obj.ndk_toolchain_version == 'auto':
+            toolchain_version = self.get_toolchain_version(ndk_root, compile_obj)
+        else:
+            toolchain_version = compile_obj.ndk_toolchain_version
+            cocos.Logging.info(MultiLanguage.get_string('COMPILE_INFO_NDK_TOOLCHAIN_VER_FMT', toolchain_version))
 
         if self.use_studio:
             ndk_work_dir = os.path.join(self.app_android_root, 'app')
@@ -300,7 +306,8 @@ class AndroidBuilder(object):
         else:
             ndk_build_cmd = '%s -C %s %s %s' % (ndk_path, ndk_work_dir, ' '.join(ndk_build_param), ndk_module_path)
 
-        ndk_build_cmd = '%s NDK_TOOLCHAIN_VERSION=%s' % (ndk_build_cmd, toolchain_version)
+        if toolchain_version is not None:
+            ndk_build_cmd = '%s NDK_TOOLCHAIN_VERSION=%s' % (ndk_build_cmd, toolchain_version)
 
         if build_mode == 'debug':
             ndk_build_cmd = '%s NDK_DEBUG=1' % ndk_build_cmd
