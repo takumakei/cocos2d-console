@@ -210,7 +210,7 @@ class CMDRunner(object):
 
     @staticmethod
     def convert_path_to_cmd(path):
-        """ Convert path which include space to correct style which bash(mac) and cmd(windows) can treat correctly.
+        """ Escape paths which include spaces to correct style which bash(mac) and cmd(windows) can treat correctly.
 
             eg: on mac: convert '/usr/xxx/apache-ant 1.9.3' to '/usr/xxx/apache-ant\ 1.9.3'
             eg: on windows: convert '"c:\apache-ant 1.9.3"\bin' to '"c:\apache-ant 1.9.3\bin"'
@@ -227,7 +227,7 @@ class CMDRunner(object):
 
     @staticmethod
     def convert_path_to_python(path):
-        """ Convert path which include space to correct style which python can treat correctly.
+        """ Escape paths which include spaces to correct style which python can treat correctly.
 
             eg: on mac: convert '/usr/xxx/apache-ant\ 1.9.3' to '/usr/xxx/apache-ant 1.9.3'
             eg: on windows: convert '"c:\apache-ant 1.9.3"\bin' to 'c:\apache-ant 1.9.3\bin'
@@ -251,16 +251,41 @@ class DataStatistic(object):
     Information collected will be used to develop new features and improve cocos.
 
     Since no personally identifiable information is collected,
-    the anonymous data will not be meaningful to anyone outside of chukong-inc.
+    the anonymous data will not be meaningful to anyone outside of Chukong Inc.
     '''
     inited = False
     stat_obj = None
     key_last_state = 'last_stat_enabled'
+    key_agreement_shown = 'agreement_shown'
 
-    # change the last time statistics status in local config file.
     @classmethod
-    def change_last_state(cls, cfg_file, enabled):
+    def get_cfg_file_path(cls):
+        return os.path.join(os.path.expanduser('~/.cocos'), 'local_cfg.json')
+
+    @classmethod
+    def get_cfg_value(cls, key, default_value):
+        local_cfg_file = cls.get_cfg_file_path()
+        if not os.path.isfile(local_cfg_file):
+            cur_info = None
+        else:
+            try:
+                f = open(local_cfg_file)
+                cur_info = json.load(f)
+                f.close()
+            except:
+                cur_info = None
+
+        ret = default_value
+        if cur_info is not None:
+            if key in cur_info:
+                ret = cur_info[key]
+
+        return ret
+
+    @classmethod
+    def set_cfg_value(cls, key, value):
         # get current local config info
+        cfg_file = cls.get_cfg_file_path()
         if not os.path.isfile(cfg_file):
             cur_info = {}
         else:
@@ -272,33 +297,63 @@ class DataStatistic(object):
                 cur_info = {}
 
         # set the value in config
-        cur_info[cls.key_last_state] = enabled
+        cur_info[key] = value
+
+        # make config directory if it's not already there
+        cfg_dir = os.path.dirname(cfg_file)
+        if not os.path.exists(cfg_dir):
+            os.makedirs(cfg_dir)
 
         # write the config
         f = open(cfg_file, 'w')
         json.dump(cur_info, f, sort_keys=True, indent=4)
         f.close()
 
+    # get the stat agreed or not
+    @classmethod
+    def is_agreement_shown(cls):
+        return cls.get_cfg_value(cls.key_agreement_shown, False)
+
+    @classmethod
+    def change_agree_stat(cls, agreed):
+        cls.set_cfg_value(cls.key_agreement_shown, True)
+
+        # write the config to ini
+        ini_file = os.path.join(get_current_path(), "cocos2d.ini")
+        f = open(ini_file)
+        old_lines = f.readlines()
+        f.close()
+
+        import re
+        new_str = 'enable_stat=%s' % ('true' if agreed else 'false')
+        new_lines = []
+        for line in old_lines:
+            new_line = re.sub('enable_stat[ \t]*=(.*)$', new_str, line)
+            new_lines.append(new_line)
+
+        f = open(ini_file, 'w')
+        f.writelines(new_lines)
+        f.close()
+
+    @classmethod
+    def show_stat_agreement(cls):
+        if cls.is_agreement_shown():
+            return
+
+        # show the agreement
+        input_value = raw_input(MultiLanguage.get_string('COCOS_AGREEMENT'))
+        agreed = (input_value.lower() != 'n' and input_value.lower() != 'no')
+        cls.change_agree_stat(agreed)
+
+    # change the last time statistics status in local config file.
+    @classmethod
+    def change_last_state(cls, enabled):
+        cls.set_cfg_value(cls.key_last_state, enabled)
+
     # get the last time statistics status in local config file.
     @classmethod
-    def get_last_state(cls, cfg_file):
-        # get the config
-        if not os.path.isfile(cfg_file):
-            cur_info = None
-        else:
-            try:
-                f = open(cfg_file)
-                cur_info = json.load(f)
-                f.close()
-            except:
-                cur_info = None
-
-        ret = True
-        if cur_info is not None:
-            if cls.key_last_state in cur_info:
-                ret = cur_info[cls.key_last_state]
-
-        return ret
+    def get_last_state(cls):
+        return cls.get_cfg_value(cls.key_last_state, True)
 
     @classmethod
     def init_stat_obj(cls):
@@ -321,8 +376,7 @@ class DataStatistic(object):
                 cur_enabled = parser.is_statistic_enabled()
 
                 # get last time is enabled or not
-                local_cfg_file = os.path.join(os.path.expanduser('~/.cocos'), 'local_cfg.json')
-                last_enabled = cls.get_last_state(local_cfg_file)
+                last_enabled = cls.get_last_state()
 
                 if not cur_enabled:
                     # statistics is disabled
@@ -332,7 +386,7 @@ class DataStatistic(object):
 
                 # update last time status
                 if cur_enabled != last_enabled:
-                    cls.change_last_state(local_cfg_file, cur_enabled)
+                    cls.change_last_state(cur_enabled)
 
             # try to send the cached events
             if cls.stat_obj is not None:
@@ -377,7 +431,7 @@ class CCPlugin(object):
 
     @classmethod
     def get_cocos2d_path(cls):
-        """returns the path where cocos2d-x is installed"""
+        """returns the path where Cocos2d-x is installed"""
 
         #
         # 1: Check for config.ini
@@ -831,6 +885,13 @@ def help():
                                    MultiLanguage.get_available_langs()))
     print(MultiLanguage.get_string('COCOS_HELP_EXAMPLE'))
 
+def show_version():
+    import utils
+    cur_path = get_current_path()
+    engine_path = os.path.normpath(os.path.join(cur_path, '../../../'))
+    engine_ver = utils.get_engine_version(engine_path)
+    print(engine_ver)
+    print("Cocos Console %s" % COCOS2D_CONSOLE_VERSION)
 
 def run_plugin(command, argv, plugins):
     run_directly = False
@@ -885,8 +946,6 @@ else:
     _ = MultiLanguage.get_string
 
 if __name__ == "__main__":
-    DataStatistic.stat_event('cocos', 'start', 'invoked')
-
     # Parse the arguments, specify the language
     language_arg = '--ol'
     if language_arg in sys.argv:
@@ -902,6 +961,9 @@ if __name__ == "__main__":
         sys.argv.pop(idx)
         sys.argv.pop(idx)
 
+    DataStatistic.show_stat_agreement()
+    DataStatistic.stat_event('cocos', 'start', 'invoked')
+
     if not _check_python_version():
         DataStatistic.terminate_stat()
         sys.exit(CCPluginError.ERROR_TOOLS_NOT_FOUND)
@@ -916,7 +978,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if len(sys.argv) > 1 and sys.argv[1] in ('-v', '--version'):
-        print("%s" % COCOS2D_CONSOLE_VERSION)
+        show_version()
         DataStatistic.terminate_stat()
         sys.exit(0)
 
